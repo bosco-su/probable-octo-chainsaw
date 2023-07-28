@@ -1,0 +1,37 @@
+[template]
+cargo_generate_version = ">=0.18.0"
+
+[placeholders.owner]
+type = "string"
+prompt = "Owner"
+
+[placeholders.copyright-year]
+type = "string"
+prompt = "Copyright year"
+default = "2023"
+
+[placeholders.use-badge]
+type = "bool"
+prompt = "Insert status badge to README top"
+default = true
+
+[placeholders.use-contrib-rocks]
+type = "bool"
+prompt = "Insert contrib.rocks to README#Contributors"
+default = false
+
+[placeholders.use-deps]
+type = "bool"
+prompt = "Insert commonly use deps to Cargo.toml"
+default = true
+
+[placeholders.use-rust-template]
+type = "bool"
+prompt = "Insert rust-template to README#Contributing"
+default = true
+
+[conditional.'crate_type == "lib"']
+ignore = ["src/main.rs"]
+
+[conditional.'crate_type == "bin"']
+ignore = ["src/lib.rs"]

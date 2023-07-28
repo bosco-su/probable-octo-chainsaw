@@ -1,0 +1,134 @@
+name: Generate
+run-name: Generate ${{ inputs.crate-type }} ${{ inputs.crate-name }} ${{ inputs.create-gh-repo && format('{0}', 'and Create Github repository') || '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      create-gh-repo:
+        description: "Create Github repository, owner will be ignored"
+        default: false
+        type: boolean
+      gh-repo-visibility:
+        description: "⬆️ Github repository visibility"
+        default: public
+        type: choice
+        options:
+          - public
+          - private
+      crate-name:
+        required: true
+        type: string
+      crate-type:
+        default: bin
+        type: choice
+        options:
+          - bin
+          - lib
+      owner:
+        required: true
+        type: string
+      copyright-year:
+        required: true
+        default: "2023"
+        type: string
+      use-badge:
+        default: true
+        type: boolean
+      use-contrib-rocks:
+        default: false
+        type: boolean
+      use-deps:
+        default: true
+        type: boolean
+      use-rust-template:
+        default: true
+        type: boolean
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  generate_template:
+    name: Generate template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      #- name: Check template exits
+
+      - name: Prexec
+        run: |
+          ########## script ##########
+          dist="$(pwd)/__dist__"
+
+          #--silent
+          generate_cmd="cargo generate --destination $dist --path ./template --name '${{ inputs.crate-name }}' --${{ inputs.crate-type }}"
+
+          if [[ "${{ inputs.create-gh-repo }}" == "true" ]];then
+            owner="${{ github.repository_owner }}"
+            echo "Use github.repository_owner(${owner})"
+          else
+            owner="${{ inputs.owner }}"
+          fi
+          generate_define="--define owner=${owner}"
+
+          generate_define+=" --define copyright-year=${{ inputs.copyright-year }}"
+          generate_define+=" --define use-badge=${{ inputs.use-badge }}"
+          generate_define+=" --define use-contrib-rocks=${{ inputs.use-contrib-rocks }}"
+          generate_define+=" --define use-deps=${{ inputs.use-deps }}"
+          generate_define+=" --define use-rust-template=${{ inputs.use-rust-template }}"
+
+          echo "DIST=${dist}" | tee -a "$GITHUB_ENV"
+          echo "GENERATE_CMD=${generate_cmd}" | tee -a "$GITHUB_ENV"
+          echo "GENERATE_DEFINE=${generate_define}" | tee -a "$GITHUB_ENV"
+
+      - name: Install cargo-generate
+        run: |
+          ########## script ##########
+          latest=$(curl -sL https://api.github.com/repos/cargo-generate/cargo-generate/releases/latest | jq -r ".tag_name" )
+          echo "latest: $latest"
+
+          dl_url="https://github.com/cargo-generate/cargo-generate/releases/download/${latest}/cargo-generate-${latest}-x86_64-unknown-linux-musl.tar.gz"
+          path="/usr/local/bin/"
+          echo "download: $dl_url" \
+            && wget -q "$dl_url" -P "$path" \
+            && tar -zxf "/usr/local/bin/cargo-generate-${latest}-x86_64-unknown-linux-musl.tar.gz" -C "$path"
+
+      - name: Generate template
+        run: |
+          ########## script ##########
+          eval $GENERATE_CMD $GENERATE_DEFINE
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: template-${{ inputs.crate-name }}
+          path: ${{ env.DIST }}
+
+  create_github_repo:
+    name: Create Github repository
+    needs: [generate_template]
+    if: inputs.create-gh-repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+      - name: Create Github repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_ADMIN_CODE_WORKFLOWS }}
+        run: |
+          ########## script ##########
+          cd "template-${{ inputs.crate-name }}/${{ inputs.crate-name }}"
+
+          default_branch="main"
+          git init -q --initial-branch "$default_branch"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .
+          #git commit -m "init: workspace" -m "[skip ci]" >/dev/null
+          git commit -m "init: workspace" >/dev/null
+
+          # permissions
+          # Access: Read and write
+          # Administration Contents Workflows
+          gh repo create --source . --push --${{ inputs.gh-repo-visibility }}
